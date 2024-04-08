@@ -60,6 +60,9 @@ fn main() -> anyhow::Result<()> {
             let _ = z.read_until(0, &mut buf).context("read header from .git/objects")?;
             let header = CStr::from_bytes_with_nul(&buf).expect("know there is an exact one nul and it is at the end");
             let header = header.to_str().context("git/object file header is not valid utf8")?;
+            let Some((kind, size)) = header.split_once(' ') else {
+                anyhow::bail!(".git/objects file header did not start with 'known type': '{header}'");
+            };
             let Some(size) = header.strip_prefix("blob") else {
                 anyhow::bail!(".git/objects file header did not start with 'blob': '{header}'");
             };
@@ -67,7 +70,21 @@ fn main() -> anyhow::Result<()> {
             buf.clear();
             buf.reserve_exact(size);
             let _  = z.read_exact(&mut buf[..]).context(".git/objects file does not match expectations")
-        
+            let n = z.read(&mut [0]).context("validte EOF in .git/object file")?;
+            anyhow::ensure!(n == 0, "git/objects file has trailing bytes");
+            let stdout = std::io::stdout();
+            let stdout = stdout.lock();
+           
+            match kind {
+                "blob" => 
+                    stdout 
+                    .write_all(&buf)
+                    .context("write objects contents to stdout")?,
+                _ => write!(stdout, "we do not know how to print kind"),
+            }
+
+
+
         }
     }
 
