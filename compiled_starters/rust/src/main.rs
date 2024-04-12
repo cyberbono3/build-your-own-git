@@ -2,10 +2,11 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 #[allow(unused_imports)]
 use std::env;
+use std::ffi::CStr;
 #[allow(unused_imports)]
 use std::fs;
-use std::ffi::CStr;
-use std::io::{BufReader, BufRead};
+use std::io::{BufRead, BufReader};
+use std::io::{Write, Read};
 
 use flate2::write::ZlibDecoder;
 
@@ -27,6 +28,10 @@ enum Command {
 
         object_hash: String,
     },
+}
+
+enum Kind {
+    Blob,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -56,35 +61,42 @@ fn main() -> anyhow::Result<()> {
             .context("open in .git/objects  ")?;
             let z = ZlibDecoder::new(f);
             let mut z = BufReader::new(z);
-            let mut buf: Vec<u8> = Vec::new();
-            let _ = z.read_until(0, &mut buf).context("read header from .git/objects")?;
-            let header = CStr::from_bytes_with_nul(&buf).expect("know there is an exact one nul and it is at the end");
-            let header = header.to_str().context("git/object file header is not valid utf8")?;
+            let mut buf = Vec::new();
+            z.read_until(0, &mut buf)
+                .context("read header from .git/objects")?;
+            let header = CStr::from_bytes_with_nul(&buf)
+                .expect("know there is exactly one nul, and it's at the end");
+            let header = header
+                .to_str()
+                .context(".git/objects file header isn't valid UTF-8")?;
             let Some((kind, size)) = header.split_once(' ') else {
-                anyhow::bail!(".git/objects file header did not start with 'known type': '{header}'");
+                anyhow::bail!(
+                    ".git/objects file header did not start with a known type: '{header}'"
+                );
             };
-            let Some(size) = header.strip_prefix("blob") else {
-                anyhow::bail!(".git/objects file header did not start with 'blob': '{header}'");
+            let kind = match kind {
+                "blob" => Kind::Blob,
+                _ => anyhow::bail!("we do not yet know how to print a '{kind}'"),
             };
-            let size = size.parse::<usize>().context(".git/objects file header has invalid 'size': '{size}'")?;
+            let size = size
+                .parse::<usize>()
+                .context(".git/objects file header has invalid size: {size}")?;
             buf.clear();
-            buf.reserve_exact(size);
-            let _  = z.read_exact(&mut buf[..]).context(".git/objects file does not match expectations")
-            let n = z.read(&mut [0]).context("validte EOF in .git/object file")?;
-            anyhow::ensure!(n == 0, "git/objects file has trailing bytes");
+            buf.resize(size, 0);
+            z.read_exact(&mut buf[..])
+                .context("read true contents of .git/objects file")?;
+            let n = z
+                .read(&mut [0])
+                .context("validate EOF in .git/object file")?;
+            anyhow::ensure!(n == 0, ".git/object file had {n} trailing bytes");
             let stdout = std::io::stdout();
-            let stdout = stdout.lock();
-           
+            let mut stdout = stdout.lock();
+
             match kind {
-                "blob" => 
-                    stdout 
+                Kind::Blob => stdout
                     .write_all(&buf)
-                    .context("write objects contents to stdout")?,
-                _ => write!(stdout, "we do not know how to print kind"),
+                    .context("write object contents to stdout")?,
             }
-
-
-
         }
     }
 
