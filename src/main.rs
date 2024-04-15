@@ -6,7 +6,7 @@ use std::ffi::CStr;
 #[allow(unused_imports)]
 use std::fs;
 use std::io::{BufRead, BufReader};
-use std::io::{Write, Read};
+use std::io::{Read, Write};
 
 use flate2::write::ZlibDecoder;
 
@@ -36,8 +36,9 @@ enum Kind {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+
     // You can use print statements as follows for debugging, they'll be visible when running tests.
-    println!("Logs from your program will appear here!");
+    eprintln!("Logs from your program will appear here!");
 
     // Uncomment this block to pass the first stage
     match args.command {
@@ -52,14 +53,18 @@ fn main() -> anyhow::Result<()> {
             pretty_print,
             object_hash,
         } => {
-            anyhow::ensure!(pretty_print, "mode has to be given without dash p and we do not support mode");
-            // TODO support shortest unique object hashes
+            anyhow::ensure!(
+                pretty_print,
+                "mode must be given without -p, and we don't support mode"
+            );
+
+            // TODO: support shortest-unique object hashes
             let f = std::fs::File::open(format!(
                 ".git/objects/{}/{}",
                 &object_hash[..2],
                 &object_hash[2..]
             ))
-            .context("open in .git/objects  ")?;
+            .context("open in .git/objects")?;
             let z = ZlibDecoder::new(f);
             let mut z = BufReader::new(z);
             let mut buf = Vec::new();
@@ -80,23 +85,19 @@ fn main() -> anyhow::Result<()> {
                 _ => anyhow::bail!("we do not yet know how to print a '{kind}'"),
             };
             let size = size
-                .parse::<usize>()
+                .parse::<u64>()
                 .context(".git/objects file header has invalid size: {size}")?;
-            buf.clear();
-            buf.resize(size, 0);
-            z.read_exact(&mut buf[..])
-                .context("read true contents of .git/objects file")?;
-            let n = z
-                .read(&mut [0])
-                .context("validate EOF in .git/object file")?;
-            anyhow::ensure!(n == 0, ".git/object file had {n} trailing bytes");
-            let stdout = std::io::stdout();
-            let mut stdout = stdout.lock();
-
+            // NOTE: this won't error if the decompressed file is too long, but will at least not
+            // spam stdout and be vulnerable to a zipbomb.
+            let mut z = z.take(size);
             match kind {
-                Kind::Blob => stdout
-                    .write_all(&buf)
-                    .context("write object contents to stdout")?,
+                Kind::Blob => {
+                    let stdout = std::io::stdout();
+                    let mut stdout = stdout.lock();
+                    let n = std::io::copy(&mut z, &mut stdout)
+                        .context("write .git/objects file to stdout")?;
+                    anyhow::ensure!(n == size, ".git/object file was not the expected size (expected: {size}, actual: {n})");
+                }
             }
         }
     }
@@ -104,15 +105,14 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-struct LimitReader<R> {
-    reader: R,
-    limit: usize,
-}
+// struct LimitReader<R> {
+//     reader: R,
+//     limit: usize,
+// }
 
-impl<R> Read for LimitReader<R> where R: Read {
-    fn read(&mut self, buf: &mut[u8]) -> io::Result<usize> {
-        todo()!
-    }
+// impl<R> Read for LimitReader<R> where R: Read {
+//     fn read(&mut self, buf: &mut[u8]) -> io::Result<usize> {
+//         todo()!
+//     }
 
-
-}
+// }
