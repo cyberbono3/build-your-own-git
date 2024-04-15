@@ -110,7 +110,7 @@ struct LimitReader<R> {
 }
 
 impl<R> Read for LimitReader<R> where R: Read {
-    fn read(&mut self, buf: &mut[u8]) -> Result<usize> {
+    fn read(&mut self, buf: &mut[u8]) -> io::Result<usize> {
         todo()!
     }
 
