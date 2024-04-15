@@ -103,3 +103,16 @@ fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+struct LimitReader<R> {
+    reader: R,
+    limit: usize,
+}
+
+impl<R> Read for LimitReader<R> where R: Read {
+    fn read(&mut self, buf: &mut[u8]) -> Result<usize> {
+        todo()!
+    }
+
+
+}
